@@ -2,5 +2,5 @@
 *.log
 __pycache__
 
-ckpt/
-data/
+ckpt*/
+data*/
