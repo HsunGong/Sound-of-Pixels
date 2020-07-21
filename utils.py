@@ -4,9 +4,126 @@ import shutil
 import numpy as np
 import librosa
 import cv2
+import torch
+import torch.nn.functional as F
 
 import subprocess as sp
 from threading import Timer
+
+def save_checkpoint(nets, history, optimizer, epoch, args):
+    import torch
+    (net_sound, net_frame) = nets
+
+    def _save_suffix(suffix):
+        torch.save({
+            'history':history,
+            'sound' : net_sound.state_dict(),
+            'frame_features' : net_frame.features.state_dict(),
+            'frame_fc' : net_frame.fc.state_dict(),
+            'optimizer' : optimizer.state_dict(),
+            'epoch' : epoch
+        },f'{args.ckpt}/{suffix}.pth')
+
+    suffix_latest = 'latest'
+    suffix_best = 'best'
+    _save_suffix(suffix_latest)
+    if len(history['val']['err']) == 0: cur_err = history['train']['err'][-1]
+    else: cur_err = history['val']['err'][-1]
+
+    print('Saving checkpoints at {} epochs.'.format(epoch), end='')
+    if cur_err < args.best_err:
+        print('Update best model')
+        args.best_err = cur_err
+        _save_suffix(suffix_best)
+    else: print('')
+
+def set_seed(seed):
+    import random
+    import numpy
+    import torch
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+from mir_eval.separation import bss_eval_sources
+
+# Calculate metrics
+def calc_metrics(batch_data, outputs, args):
+    # meters
+    sdr_mix_meter = AverageMeter()
+    sdr_meter = AverageMeter()
+    sir_meter = AverageMeter()
+    sar_meter = AverageMeter()
+
+    # fetch data and predictions
+    mag_mix = batch_data['mag_mix']
+    phase_mix = batch_data['phase_mix']
+    audios = batch_data['audios']
+
+    pred_masks_ = outputs['pred_masks']
+
+    # unwarp log scale
+    N = args.num_mix
+    B = mag_mix.size(0)
+    pred_masks_linear = [None for n in range(N)]
+    for n in range(N):
+        if args.log_freq:
+            grid_unwarp = torch.from_numpy(
+                warpgrid(B, args.stft_frame//2+1, pred_masks_[0].size(3), warp=False)).to(args.device)
+            pred_masks_linear[n] = F.grid_sample(pred_masks_[n], grid_unwarp)
+        else:
+            pred_masks_linear[n] = pred_masks_[n]
+
+    # convert into numpy
+    mag_mix = mag_mix.numpy()
+    phase_mix = phase_mix.numpy()
+    for n in range(N):
+        pred_masks_linear[n] = pred_masks_linear[n].detach().cpu().numpy()
+
+        # threshold if binary mask
+        if args.binary_mask:
+            pred_masks_linear[n] = (pred_masks_linear[n] > args.mask_thres).astype(np.float32)
+
+    # loop over each sample
+    for j in range(B):
+        # save mixture
+        mix_wav = istft_reconstruction(mag_mix[j, 0], phase_mix[j, 0], hop_length=args.stft_hop)
+
+        # save each component
+        preds_wav = [None for n in range(N)]
+        for n in range(N):
+            # Predicted audio recovery
+            pred_mag = mag_mix[j, 0] * pred_masks_linear[n][j, 0]
+            preds_wav[n] = istft_reconstruction(pred_mag, phase_mix[j, 0], hop_length=args.stft_hop)
+
+        # separation performance computes
+        L = preds_wav[0].shape[0]
+        gts_wav = [None for n in range(N)]
+        valid = True
+        for n in range(N):
+            gts_wav[n] = audios[n][j, 0:L].numpy()
+            valid *= np.sum(np.abs(gts_wav[n])) > 1e-5
+            valid *= np.sum(np.abs(preds_wav[n])) > 1e-5
+        if valid:
+            sdr, sir, sar, _ = bss_eval_sources(
+                np.asarray(gts_wav),
+                np.asarray(preds_wav),
+                False)
+            sdr_mix, _, _, _ = bss_eval_sources(
+                np.asarray(gts_wav),
+                np.asarray([mix_wav[0:L] for n in range(N)]),
+                False)
+            sdr_mix_meter.update(sdr_mix.mean())
+            sdr_meter.update(sdr.mean())
+            sir_meter.update(sir.mean())
+            sar_meter.update(sar.mean())
+
+    return [sdr_mix_meter.average(),
+            sdr_meter.average(),
+            sir_meter.average(),
+            sar_meter.average()]
 
 
 def warpgrid(bs, HO, WO, warp=True):
@@ -30,7 +147,7 @@ def makedirs(path, remove=False):
     if os.path.isdir(path):
         if remove:
             shutil.rmtree(path)
-            print('removed existing directory...')
+            print('removing')
         else:
             return
     os.makedirs(path)

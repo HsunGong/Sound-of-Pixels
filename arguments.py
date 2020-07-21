@@ -7,6 +7,7 @@ class ArgParser(object):
         # Model related arguments
         parser.add_argument('--id', default='',
                             help="a name for identifying the model")
+        parser.add_argument('--resume', action='store_true')
         parser.add_argument('--num_mix', default=2, type=int,
                             help="number of sounds to mix")
         parser.add_argument('--arch_sound', default='unet7',
@@ -106,10 +107,7 @@ class ArgParser(object):
         parser.add_argument('--lr_steps',
                             nargs='+', type=int, default=[40, 60],
                             help='steps to drop LR in epochs')
-        parser.add_argument('--beta1', default=0.9, type=float,
-                            help='momentum for sgd, beta1 for adam')
-        parser.add_argument('--weight_decay', default=1e-4, type=float,
-                            help='weights regularizer')
+        parser.add_argument('--clip_norm', default=5, type=float, help='LR')
         self.parser = parser
 
     def print_arguments(self, args):

@@ -10,59 +10,58 @@ from PIL import Image
 
 from . import video_transforms as vtransforms
 
+from typing import Union
+import pandas as pd
+import os.path as P
+
+def parse_csv(filename) -> Union[pd.Series , pd.Series, pd.Series]:
+    df = pd.read_csv(filename, header=None, names=["audio", "frame", "size"])
+    df['size'] = pd.to_numeric(df['size'], errors='coerce').astype(np.int32)
+    return df
+
+def base_dirname(path, n):
+    """Given path d, go up n dirs from d and return that path"""
+    for _ in range(n):
+        path = P.dirname(path)
+    return P.basename(path)
 
 class BaseDataset(torchdata.Dataset):
-    def __init__(self, list_sample, opt, max_sample=-1, split='train'):
-        # params
-        self.num_frames = opt.num_frames
-        self.stride_frames = opt.stride_frames
-        self.frameRate = opt.frameRate
-        self.imgSize = opt.imgSize
-        self.audRate = opt.audRate
-        self.audLen = opt.audLen
-        self.audSec = 1. * self.audLen / self.audRate
-        self.binary_mask = opt.binary_mask
+    @staticmethod
+    def _generate(df:pd.DataFrame):
+        # datas = pd.DataFrame({'path':self.list_sample})
+        df['id'] = df.apply(lambda x: base_dirname(P.splitext(x['audio'])[0], 0), axis=1)
+        df['type'] = df.apply(lambda x: base_dirname(P.splitext(x['audio'])[0], 1), axis=1)
+        # df= df[df['type'].str.match('Cello|Bassoon')]
+        df= df[df['type'].str.match('Cello|Bassoon')]
+        # print(df)
+        return df
+        # return df[df['type'].str.match('Cello|DoubleBass')]
+        # return df
 
-        # STFT params
-        self.log_freq = opt.log_freq
-        self.stft_frame = opt.stft_frame
-        self.stft_hop = opt.stft_hop
-        self.HS = opt.stft_frame // 2 + 1
-        self.WS = (self.audLen + 1) // self.stft_hop
-
+    def __init__(self, list_sample, split,
+            num_frames, stride_frames, frameRate, imgSize, 
+            audRate,audLen,
+        ):
         self.split = split
-        self.seed = opt.seed
-        random.seed(self.seed)
+
+        # params
+        self.num_frames = num_frames
+        self.stride_frames = stride_frames
+        self.frameRate = frameRate
+        self.imgSize = imgSize
 
         # initialize video transform
         self._init_vtransform()
 
-        # list_sample can be a python list or a csv file of list
-        if isinstance(list_sample, str):
-            # self.list_sample = [x.rstrip() for x in open(list_sample, 'r')]
-            self.list_sample = []
-            for row in csv.reader(open(list_sample, 'r'), delimiter=','):
-                if len(row) < 2:
-                    continue
-                self.list_sample.append(row)
-        elif isinstance(list_sample, list):
-            self.list_sample = list_sample
-        else:
-            raise('Error list_sample!')
+        self.audRate = audRate
+        self.audLen = audLen
+        self.audSec = 1. * self.audLen / self.audRate
 
-        if self.split == 'train':
-            self.list_sample *= opt.dup_trainset
-            random.shuffle(self.list_sample)
+        # generate data-configs
+        self.list_sample = self._generate(parse_csv(list_sample))
 
-        if max_sample > 0:
-            self.list_sample = self.list_sample[0:max_sample]
-
-        num_sample = len(self.list_sample)
-        assert num_sample > 0
-        print('# samples: {}'.format(num_sample))
-
-    def __len__(self):
-        return len(self.list_sample)
+    def __repr__(self):
+        return '# samples: {}'.format(self.__len__())
 
     # video transform funcs
     def _init_vtransform(self):
@@ -83,84 +82,46 @@ class BaseDataset(torchdata.Dataset):
         transform_list.append(vtransforms.Stack())
         self.vid_transform = transforms.Compose(transform_list)
 
-    # image transform funcs, deprecated
-    def _init_transform(self):
-        mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]
 
-        if self.split == 'train':
-            self.img_transform = transforms.Compose([
-                transforms.Scale(int(self.imgSize * 1.2)),
-                transforms.RandomCrop(self.imgSize),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean, std)])
+    def _load_frames(self, frame_dir, indexs, _type='jpg') -> torch.Tensor:
+        if _type == 'jpg':
+            from PIL import Image
+            imgs = []
+            for idx in indexs:
+                imgs.append(Image.open(f'{frame_dir}/{idx}.jpg').convert('RGB'))
         else:
-            self.img_transform = transforms.Compose([
-                transforms.Scale(self.imgSize),
-                transforms.CenterCrop(self.imgSize),
-                transforms.ToTensor(),
-                transforms.Normalize(mean, std)])
+            raise ValueError
+        return self.vid_transform(imgs)
 
-    def _load_frames(self, paths):
-        frames = []
-        for path in paths:
-            frames.append(self._load_frame(path))
-        frames = self.vid_transform(frames)
-        return frames
-
-    def _load_frame(self, path):
-        img = Image.open(path).convert('RGB')
-        return img
-
-    def _stft(self, audio):
-        spec = librosa.stft(
-            audio, n_fft=self.stft_frame, hop_length=self.stft_hop)
-        amp = np.abs(spec)
-        phase = np.angle(spec)
-        return torch.from_numpy(amp), torch.from_numpy(phase)
-
-    def _load_audio_file(self, path):
-        if path.endswith('.mp3'):
-            audio_raw, rate = torchaudio.load(path)
-            audio_raw = audio_raw.numpy().astype(np.float32)
-
-            # range to [-1, 1]
-            audio_raw *= (2.0**-31)
-
-            # convert to mono
-            if audio_raw.shape[1] == 2:
-                audio_raw = (audio_raw[:, 0] + audio_raw[:, 1]) / 2
+    def _load_audio(self, path, center_timestamp, _type='wav'):
+        def _read_wav(sample_rate, path:str):
+            # load audio
+            if _type == 'npy':
+                path = path + '.npy'
+                wav = np.load(path)
+            elif _type == 'wav':
+                import librosa
+                wav, sr = librosa.core.load(path, sr=None)
+                if sample_rate != sr:
+                    print('warn resample', path)
+                    wav = librosa.audio.resample(wav, sr, sample_rate)
             else:
-                audio_raw = audio_raw[:, 0]
-        else:
-            audio_raw, rate = librosa.load(path, sr=None, mono=True)
+                raise ValueError('No such wav type')
 
-        return audio_raw, rate
+            # repeat if audio is too short
+            if wav.shape[0] < self.audLen:
+                n = self.audLen // wav.shape[0] + 1
+                wav = np.tile(wav, n)
+            return wav
 
-    def _load_audio(self, path, center_timestamp, nearest_resample=False):
         audio = np.zeros(self.audLen, dtype=np.float32)
 
         # silent
         if path.endswith('silent'):
             return audio
 
-        # load audio
-        audio_raw, rate = self._load_audio_file(path)
-
-        # repeat if audio is too short
-        if audio_raw.shape[0] < rate * self.audSec:
-            n = int(rate * self.audSec / audio_raw.shape[0]) + 1
-            audio_raw = np.tile(audio_raw, n)
-
-        # resample
-        if rate > self.audRate:
-            # print('resmaple {}->{}'.format(rate, self.audRate))
-            if nearest_resample:
-                audio_raw = audio_raw[::rate//self.audRate]
-            else:
-                audio_raw = librosa.resample(audio_raw, rate, self.audRate)
-
+        audio_raw = _read_wav(self.audRate, path)
+        
         # crop N seconds
         len_raw = audio_raw.shape[0]
         center = int(center_timestamp * self.audRate)
@@ -170,49 +131,4 @@ class BaseDataset(torchdata.Dataset):
         audio[self.audLen//2-(center-start): self.audLen//2+(end-center)] = \
             audio_raw[start:end]
 
-        # randomize volume
-        if self.split == 'train':
-            scale = random.random() + 0.5     # 0.5-1.5
-            audio *= scale
-        audio[audio > 1.] = 1.
-        audio[audio < -1.] = -1.
-
         return audio
-
-    def _mix_n_and_stft(self, audios):
-        N = len(audios)
-        mags = [None for n in range(N)]
-
-        # mix
-        for n in range(N):
-            audios[n] /= N
-        audio_mix = np.asarray(audios).sum(axis=0)
-
-        # STFT
-        amp_mix, phase_mix = self._stft(audio_mix)
-        for n in range(N):
-            ampN, _ = self._stft(audios[n])
-            mags[n] = ampN.unsqueeze(0)
-
-        # to tensor
-        # audio_mix = torch.from_numpy(audio_mix)
-        for n in range(N):
-            audios[n] = torch.from_numpy(audios[n])
-
-        return amp_mix.unsqueeze(0), mags, phase_mix.unsqueeze(0)
-
-    def dummy_mix_data(self, N):
-        frames = [None for n in range(N)]
-        audios = [None for n in range(N)]
-        mags = [None for n in range(N)]
-
-        amp_mix = torch.zeros(1, self.HS, self.WS)
-        phase_mix = torch.zeros(1, self.HS, self.WS)
-
-        for n in range(N):
-            frames[n] = torch.zeros(
-                3, self.num_frames, self.imgSize, self.imgSize)
-            audios[n] = torch.zeros(self.audLen)
-            mags[n] = torch.zeros(1, self.HS, self.WS)
-
-        return amp_mix, mags, frames, audios, phase_mix

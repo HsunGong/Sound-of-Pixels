@@ -1,77 +1,155 @@
 import os
 import random
-from .base import BaseDataset
+from dataset.base import BaseDataset
+import numpy as np
+import pandas as pd
+import torch
+from typing import List
 
 
 class MUSICMixDataset(BaseDataset):
-    def __init__(self, list_sample, opt, **kwargs):
-        super(MUSICMixDataset, self).__init__(
-            list_sample, opt, **kwargs)
-        self.fps = opt.frameRate
-        self.num_mix = opt.num_mix
+    def __init__(self, list_sample,
+            num_frames, stride_frames, frameRate, imgSize, 
+            audRate=11025, audLen=44100,
+            num_mix=2, max_sample=-1, dup_trainset=1, differ_type=True, split='train'
+        ):
+        super().__init__(list_sample, split,
+            num_frames, stride_frames, frameRate, imgSize, 
+            audRate,audLen)
 
-    def __getitem__(self, index):
-        N = self.num_mix
-        frames = [None for n in range(N)]
-        audios = [None for n in range(N)]
-        infos = [[] for n in range(N)]
-        path_frames = [[] for n in range(N)]
-        path_audios = ['' for n in range(N)]
-        center_frames = [0 for n in range(N)]
+        self.fps = frameRate
+        self.selected_frames = (np.arange(0, self.num_frames) - self.num_frames // 2) * self.stride_frames
+        
+        self.num_mix = num_mix
+        self.differ_type = differ_type
 
-        # the first video
-        infos[0] = self.list_sample[index]
+        self.update_mix(_dilation=dup_trainset,max_sample=max_sample)
+        self.update_center()
 
-        # sample other videos
-        if not self.split == 'train':
-            random.seed(index)
-        for n in range(1, N):
-            indexN = random.randint(0, len(self.list_sample)-1)
-            infos[n] = self.list_sample[indexN]
+    def __len__(self):
+        return len(self.mix_idx)
 
-        # select frames
-        idx_margin = max(
-            int(self.fps * 8), (self.num_frames // 2) * self.stride_frames)
-        for n, infoN in enumerate(infos):
-            path_audioN, path_frameN, count_framesN = infoN
+    def update_mix(self, _dilation, max_sample=-1):
+        '''generate a mixture index of these samples
+        mix_idx : [len(dataset), idx1, idx2, ...]
+        '''
+        self.mix_idx = np.zeros((len(self.list_sample) * _dilation, self.num_mix), dtype=np.int)
 
-            if self.split == 'train':
-                # random, not to sample start and end n-frames
-                center_frameN = random.randint(
-                    idx_margin+1, int(count_framesN)-idx_margin)
-            else:
-                center_frameN = int(count_framesN) // 2
-            center_frames[n] = center_frameN
+        # types = self.list_sample['type'].unique()
+        _d = self.list_sample
+        for idx, record in _d.iterrows():
+            self.mix_idx[idx * _dilation: (idx+1) * _dilation,0] = idx # ori idx
 
-            # absolute frame/audio paths
-            for i in range(self.num_frames):
-                idx_offset = (i - self.num_frames // 2) * self.stride_frames
-                path_frames[n].append(
-                    os.path.join(
-                        path_frameN,
-                        '{:06d}.jpg'.format(center_frameN + idx_offset)))
-            path_audios[n] = path_audioN
+            _new_d = _d[_d['type'] != record['type']] if self.differ_type else _d
+            for _next_idx in range(1, self.num_mix): # slow but good
+                newer = pd.DataFrame(columns=_new_d.columns)
+                while len(newer) < _dilation * (self.num_mix - 1):
+                    # newer = newer.append(_new_d.sample((1+_dilation) * (self.num_mix - 1), axis=0, replace=False).drop_duplicates('type')) # random_state same as numpy.random.seed
+                    newer = newer.append(_new_d.sample(_dilation * (self.num_mix - 1), axis=0, replace=False)) # random_state same as numpy.random.seed
+                    # newer.append(_new_d.sample(_dilation * self.num_mix, axis=0)) # random_state same as numpy.random.seed
+                    # newer.drop_duplicates('type', inplace=True)
+                newer = newer[:_dilation * (self.num_mix - 1)].index
+                self.mix_idx[idx * _dilation: (idx+1) * _dilation, _next_idx] = newer
 
-        # load frames and audios, STFT
-        try:
-            for n, infoN in enumerate(infos):
-                frames[n] = self._load_frames(path_frames[n])
-                # jitter audio
-                # center_timeN = (center_frames[n] - random.random()) / self.fps
-                center_timeN = (center_frames[n] - 0.5) / self.fps
-                audios[n] = self._load_audio(path_audios[n], center_timeN)
-            mag_mix, mags, phase_mix = self._mix_n_and_stft(audios)
+        if max_sample > 0:
+            self.mix_idx = self.mix_idx[:max_sample]
+        np.random.shuffle(self.mix_idx)
 
-        except Exception as e:
-            print('Failed loading frame/audio: {}'.format(e))
-            # create dummy data
-            mag_mix, mags, frames, audios, phase_mix = \
-                self.dummy_mix_data(N)
+    def update_center(self):
+        # all_frames = self.list_sample['size']
+        if self.split == 'train':
+            idx_margin = max(
+                int(self.fps * 8), (self.num_frames // 2) * self.stride_frames)
+            # random, not to sample start and end n-frames
+            self.list_sample['center_frame'] = self.list_sample['size'].apply(lambda x: 
+                random.randint(idx_margin+1, x - idx_margin)
+                )
+        else:
+            self.list_sample['center_frame'] = self.list_sample['size'].apply(lambda x: x // 2)
+        
+        # update audio-center
+        self.list_sample['center_audio'] = self.list_sample['center_frame'].apply(lambda x: (x - 0.5) / self.fps )
+        
+        # center_frames = info['center']
+        self.list_sample['selected_frames'] = self.list_sample['center_frame'].apply(lambda x: x + self.selected_frames)
+        
 
-        ret_dict = {'mag_mix': mag_mix, 'frames': frames, 'mags': mags}
-        if self.split != 'train':
-            ret_dict['audios'] = audios
-            ret_dict['phase_mix'] = phase_mix
-            ret_dict['infos'] = infos
+    def __getitem__(self, idx):
+        index = self.mix_idx[idx] # Index of videos (num_mix)
+        # index[0] is the reference video-index
+        info = self.list_sample.iloc[index]
+        
+        # Load and make
+        frames = self._load_frameses(info)
+        audios = self._load_audios(info)
+        audios, audio_mix = self._make_mix(audios)
 
+        ret_dict = {
+            'frames' : frames,
+            'audios' : audios,
+            'audio_mix' : audio_mix
+        }
+        if self.split == 'infer': # can not use dataloader
+            ret_dict['info'] = info # info.to_dict()
         return ret_dict
+
+    def _load_frameses(self, info: pd.DataFrame) -> torch.Tensor:
+        frames = info.apply(lambda x : 
+            self._load_frames(x['frame'], x['selected_frames']),
+        axis=1)
+        return torch.stack(frames.to_list())
+
+    def _load_audios(self, info:pd.DataFrame) -> np.ndarray:
+        '''
+        Warning: do not have scale function, need `_make_mix` !!!
+        '''
+        audios = info.apply(lambda x : 
+            self._load_audio(x['audio'], x['center_audio']), 
+        axis=1)
+        return np.vstack(audios.to_numpy())
+
+    def _make_mix(self, audios: np.ndarray):
+        # randomize volume
+        if self.split == 'train':
+            scale = 1 + (0.5 - np.random.random((len(audios), 1))) * 1 
+            # scale from 0.5 ~ 1.5
+        else: 
+            scale = 1 + (0.5 - np.random.random((len(audios), 1))) * 0
+        audios *= scale
+        mix = np.sum(audios, axis = 0)
+
+        # new scale to prevent from abs(audio) > 1
+        # audio[audio > 1.] = 1., audio[audio < -1.] = -1.
+        scale = 0.99 / max(np.max(np.abs(audios)), np.max(np.abs(mix)))
+        return (scale * audios), (scale * mix)
+
+
+
+if __name__ == '__main__':
+    import time
+    st = time.perf_counter()
+    # test
+    # dataset = FakeMIXDataset('/slfs1/users/xg000/soundofpixel/Sound-of-Pixels/data/train.csv', 16000, 32000, 32000, 1, 2)
+    # dataset = FakeMIXDataset('/slfs1/users/xg000/soundofpixel/pytorch/data/configs/8k_8/val.csv', 8000, 32000, 1, 2, _type='wav', train=False)
+    dataset = MUSICMixDataset('./data/solo/val.csv',
+            num_frames=1, stride_frames=1, frameRate=8, imgSize=224, 
+            audRate=11025, audLen=44100, num_mix=2, max_sample=-1, dup_trainset=1, differ_type=True, split='eval')
+    print('load', time.perf_counter() - st)
+
+    print(dataset, len(dataset))
+    from torch.utils.data import DataLoader
+
+    st = time.perf_counter()
+    # for idx, ((mix, refs), info) in enumerate(dataset):
+    # for idx, dic in enumerate(dataset):
+    for idx, dic in enumerate(DataLoader(dataset, batch_size=5)):
+        # if (abs(mix) >= 1).any() or (abs(refs) >= 1).any():
+        #     print(idx)
+        # print(type(dic['audios']), type(dic['frames']))
+        # print(type(dic['frames'][0]),type(dic['frames']))
+        # raise ValueError
+        # print(dic['audios'].shape, dic['frames'].shape)
+        a = dic['frames']
+        print(len(a), a[0].shape)
+        pass
+    print('time', time.perf_counter() - st)
