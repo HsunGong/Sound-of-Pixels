@@ -1,23 +1,20 @@
 #!/bin/bash
 
 OPTS=""
-OPTS+="--id MUSIC "
-OPTS+="--list_train data/train.csv "
-OPTS+="--list_val data/val.csv "
+OPTS+="--id SOLO-single "
+OPTS+="--list_train data/solo/train.csv "
+OPTS+="--list_val data/solo/val.csv "
 
 # Models
-OPTS+="--arch_sound unet7 "
+OPTS+="--arch_sound dprnn2 "
 OPTS+="--arch_synthesizer linear "
 OPTS+="--arch_frame resnet18dilated "
 OPTS+="--img_pool maxpool "
-OPTS+="--num_channels 32 "
+OPTS+="--num_channels 64 "
 # binary mask, BCE loss, weighted loss
-OPTS+="--binary_mask 1 "
-OPTS+="--loss bce "
-OPTS+="--weighted_loss 1 "
 # logscale in frequency
+OPTS+="--loss UPIT "
 OPTS+="--num_mix 2 "
-OPTS+="--log_freq 1 "
 
 # frames-related
 OPTS+="--num_frames 3 "
@@ -29,18 +26,22 @@ OPTS+="--audLen 65535 "
 OPTS+="--audRate 11025 "
 
 # learning params
-OPTS+="--num_gpus 4 "
 OPTS+="--workers 48 "
-OPTS+="--batch_size_per_gpu 20 "
+OPTS+="--dup_trainset 1 "
+
 OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "
 OPTS+="--lr_synthesizer 1e-3 "
 OPTS+="--num_epoch 100 "
-OPTS+="--lr_steps 40 80 "
+OPTS+="--lr_steps 5 8 12 15 20"
 
 # display, viz
-OPTS+="--disp_iter 20 "
-OPTS+="--num_vis 40 "
+OPTS+="--disp_iter 10 "
+OPTS+="--num_vis 4 "
 OPTS+="--num_val 256 "
 
-python -u main.py $OPTS
+OPTS+="--batch_size_per_gpu 5 "
+OPTS+="--resume"
+
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+python -u main.py $OPTS "$@"

@@ -9,6 +9,20 @@ class InnerProd(nn.Module):
         self.scale = nn.Parameter(torch.ones(fc_dim))
         self.bias = nn.Parameter(torch.zeros(1))
 
+    def forward_param(self, feat_img, feat_sound):
+        # [5, 64, 4098]
+        # [5, 64]
+        sound_size = feat_sound.shape
+        B, C = feat_img.shape[0], feat_img.shape[1]
+        # 3 64 torch.Size([3, 64]) torch.Size([3, 1, 64, 4098])
+        feat_sound = feat_sound.view(B * C, -1)
+        feat_img = (feat_img * self.scale).view(B * C, 1)
+        
+
+        z = (feat_img * feat_sound).view(*sound_size)
+        z = z + self.bias
+        return z
+
     def forward(self, feat_img, feat_sound):
         sound_size = feat_sound.size()
         B, C = sound_size[0], sound_size[1]
