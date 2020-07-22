@@ -1,19 +1,19 @@
 #!/bin/bash
 
 OPTS=""
-OPTS+="--id SOLO "
+OPTS+="--id SOLO-single "
 OPTS+="--list_train data/solo/train.csv "
 OPTS+="--list_val data/solo/val.csv "
 
 # Models
-OPTS+="--arch_sound dprnn6 "
+OPTS+="--arch_sound dprnn2 "
 OPTS+="--arch_synthesizer linear "
 OPTS+="--arch_frame resnet18dilated "
 OPTS+="--img_pool maxpool "
 OPTS+="--num_channels 64 "
 # binary mask, BCE loss, weighted loss
 # logscale in frequency
-OPTS+="--loss sisnr "
+OPTS+="--loss UPIT "
 OPTS+="--num_mix 2 "
 
 # frames-related
@@ -41,7 +41,7 @@ OPTS+="--num_vis 4 "
 OPTS+="--num_val 256 "
 
 OPTS+="--batch_size_per_gpu 5 "
-# OPTS+="--resume"
+OPTS+="--resume"
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 python -u main.py $OPTS "$@"

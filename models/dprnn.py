@@ -1,18 +1,3 @@
-from __future__ import print_function
-import argparse
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
-import torch.optim as optim
-
-import os
-import numpy as np
-import h5py
-import time
-import subprocess
 import numpy as np
 import os
 import torch
@@ -62,7 +47,7 @@ class DPRNN(nn.Module):
             self.row_norm.append(nn.GroupNorm(1, input_size, eps=1e-8))
             self.col_norm.append(nn.GroupNorm(1, input_size, eps=1e-8))
             
-        self.output2mask = nn.Sequential(nn.PReLU(),
+        self.output = nn.Sequential(nn.PReLU(),
                                     nn.Conv2d(input_size, output_size, 1)
                                    )
             
@@ -85,7 +70,7 @@ class DPRNN(nn.Module):
             col_output = self.col_norm[i](col_output)
             output = output + col_output
             
-        output = self.output2mask(output)
+        output = self.output(output)
             
         return output
     
@@ -113,7 +98,7 @@ class DPRNN_base(nn.Module):
         # dual-path RNN
         self.DPRNN = DPRNN('LSTM', self.feature_dim, self.hidden_dim, self.feature_dim*self.num_spk, 
                             num_layers=layer, bidirectional=bidirectional)
-
+        
     def pad_segment(self, input, segment_size):
         # input is the features: (B, N, T)
         batch_size, dim, seq_len = input.shape
@@ -159,7 +144,19 @@ class DPRNN_base(nn.Module):
             output = output[:,:,:-rest]
         
         return output.contiguous()  # B, N, T
+    
+    def forward(self, input):
+        pass
 
+class Separator(DPRNN_base):
+    def __init__(self, *args, **kwargs):
+        super(Separator, self).__init__(*args, **kwargs)
+        
+        # mask estimation layer
+        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.output_dim, 1),
+                                    nn.ReLU(inplace=True)
+                                   )
+        
     def forward(self, input):
         
         batch_size = input.size(0)
@@ -175,11 +172,11 @@ class DPRNN_base(nn.Module):
         
         # overlap-and-add of the outputs
         output = self.merge_feature(output, enc_rest)
-
-        return output
-
-from .synthesizer_net import *
-
+        masks = self.output(output)  # B*C, K, T
+        masks = masks.view(batch_size, self.num_spk, self.output_dim, -1)  # B, C, K, T
+        
+        return masks
+    
 class DPRNN_TasNet(nn.Module):
     def __init__(self, enc_dim=64, feature_dim=64, hidden_dim=128, sr=16000, win=2,
                  layer=6, num_spk=2, segment_size=100):
@@ -200,18 +197,11 @@ class DPRNN_TasNet(nn.Module):
         self.norm = nn.GroupNorm(1, self.enc_dim, 1e-8)
         
         # DPRNN separator
-        self.separator = DPRNN_base(self.enc_dim, self.feature_dim, self.hidden_dim, 
+        self.separator = Separator(self.enc_dim, self.feature_dim, self.hidden_dim, 
                                     self.enc_dim, self.num_spk, layer, segment_size)
-        # mask estimation layer
-        self.output2mask = nn.Sequential(nn.Conv1d(self.feature_dim, self.enc_dim, 1),
-                                    nn.ReLU(inplace=True)
-                                   )
-                
         
         # output decoder
         self.decoder = nn.ConvTranspose1d(self.enc_dim, 1, self.win, bias=False, stride=self.stride)
-
-        self.synthesizer = InnerProd(fc_dim=self.enc_dim)
         
     def pad_input(self, input, window):
         """
@@ -232,7 +222,7 @@ class DPRNN_TasNet(nn.Module):
         
     def forward(self, input, feat_frames):
         '''
-        outputs: spk, batch, seq_len
+        output: batch X spk X len
         '''
         
         # padding
@@ -240,30 +230,19 @@ class DPRNN_TasNet(nn.Module):
         batch_size = output.size(0)
         
         # waveform encoder
-        output = self.encoder(output.unsqueeze(1))  # B, N, T
-        seq_len = output.shape[-1]
+        enc_output = self.encoder(output.unsqueeze(1))  # B, N, T
+        seq_len = enc_output.shape[-1]
         # normalize features
-        enc_feature = self.norm(output)
+        enc_feature = self.norm(enc_output)
         
-        N = len(feat_frames)
-        _output = output
-
         # separation module
         mask = self.separator(enc_feature)  # B, C, N, T
-        mask = self.output2mask(mask)  # B*C, K, T
-        mask = mask.view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, K, T
+        output = mask * enc_output.unsqueeze(1)  # B, C, N, T
         
-        _output = mask * _output.unsqueeze(1)  # B, C, N, T
-
-        # ([5, 2, 64, 4098]) torch.Size([5, 64])
-        # _output = self.synthesizer.forward_param(feat_frames[idx], _output)
-
-        _output = self.decoder(_output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, L
-        _output = _output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, L
-        if self.num_spk == 1:
-            _output = _output.view(batch_size, -1)
-        else:
-            _output = _output.view(batch_size, self.num_spk, -1)
-            _output = _output.transpose(0,1)
+        # waveform decoder
+        output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, L
+        output = output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, L
+        output = output.view(batch_size, self.num_spk, -1)
+        output = output.transpose(0,1)
         
-        return _output
+        return output
