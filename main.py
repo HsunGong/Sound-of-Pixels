@@ -48,11 +48,12 @@ class NetWrapper(torch.nn.Module):
         # 1. forward net_sound -> BxCxHxW
         pred_audios = self.net_sound.forward(audio_mix, feat_frames)
         pred_audios = activate(pred_audios, args.sound_activation)
+        # print(pred_audios.shape, gt_audios.shape)
 
         # 4. loss
         err = self.crit(pred_audios, gt_audios)
         # print(err.item())#, self.crit)
-        return err, pred_audios
+        return err, [pred_audio for pred_audio in pred_audios]
 
 def create_optimizer(nets, args, checkpoint):
     (net_sound, net_frame) = nets

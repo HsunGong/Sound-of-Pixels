@@ -27,7 +27,7 @@ OPTS+="--audRate 11025 "
 
 # learning params
 OPTS+="--workers 48 "
-OPTS+="--dup_trainset 10 "
+OPTS+="--dup_trainset 3 "
 
 OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "

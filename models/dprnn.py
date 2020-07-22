@@ -246,27 +246,24 @@ class DPRNN_TasNet(nn.Module):
         enc_feature = self.norm(output)
         
         N = len(feat_frames)
-        outputs = []
-        for idx in range(N):
-            _output = output
+        _output = output
 
-            # separation module
-            mask = self.separator(enc_feature)  # B, C, N, T
-            mask = self.output2mask(mask)  # B*C, K, T
-            mask = mask.view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, K, T
-            
-            _output = mask * _output.unsqueeze(1)  # B, C, N, T
-
-            # ([5, 2, 64, 4098]) torch.Size([5, 64])
-            _output = self.synthesizer.forward_param(feat_frames[idx], _output)
-
-            _output = self.decoder(_output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, L
-            _output = _output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, L
-            if self.num_spk == 1:
-                _output = _output.view(batch_size, -1)
-            else:
-                _output = _output.view(batch_size, self.num_spk, -1)
-            
-            outputs.append(_output)
+        # separation module
+        mask = self.separator(enc_feature)  # B, C, N, T
+        mask = self.output2mask(mask)  # B*C, K, T
+        mask = mask.view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, K, T
         
-        return outputs
+        _output = mask * _output.unsqueeze(1)  # B, C, N, T
+
+        # ([5, 2, 64, 4098]) torch.Size([5, 64])
+        # _output = self.synthesizer.forward_param(feat_frames[idx], _output)
+
+        _output = self.decoder(_output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, L
+        _output = _output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, L
+        if self.num_spk == 1:
+            _output = _output.view(batch_size, -1)
+        else:
+            _output = _output.view(batch_size, self.num_spk, -1)
+            _output = _output.transpose(0,1)
+        
+        return _output

@@ -43,7 +43,7 @@ def build_sound(arch='unet5', fc_dim=64, weights=''):
     elif arch == 'unet7':
         net_sound = Unet(fc_dim=fc_dim, num_downs=7)
     elif arch == 'dprnn6':
-        net_sound = DPRNN_TasNet(num_spk=1)
+        net_sound = DPRNN_TasNet(num_spk=2)
     else: raise Exception('No such arch-sound')
 
     net_sound.apply(weights_init)
