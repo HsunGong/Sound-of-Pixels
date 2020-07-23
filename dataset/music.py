@@ -8,12 +8,12 @@ from typing import List
 
 
 class MUSICMixDataset(BaseDataset):
-    def __init__(self, list_sample,
+    def __init__(self, list_sample, selected_instr,
             num_frames, stride_frames, frameRate, imgSize, 
             audRate=11025, audLen=44100,
             num_mix=2, max_sample=-1, dup_trainset=1, differ_type=True, split='train'
         ):
-        super().__init__(list_sample, split,
+        super().__init__(list_sample, split, selected_instr,
             num_frames, stride_frames, frameRate, imgSize, 
             audRate,audLen)
 
@@ -76,7 +76,7 @@ class MUSICMixDataset(BaseDataset):
                 new_list = new_list.append(_new, ignore_index=True)
             else:
                 row['center_frame'] = row['size'] // 2
-                new_list = new_list.append(row)
+                new_list = new_list.append(row, ignore_index=True)
         self.list_sample = new_list
         
         # update audio-center
@@ -92,7 +92,10 @@ class MUSICMixDataset(BaseDataset):
         info = self.list_sample.iloc[index]
         
         # Load and make
-        frames = self._load_frameses(info)
+        try:
+            frames = self._load_frameses(info)
+        except:
+            frames = torch.zeros([2, 3, 3, 224, 224])
         audios = self._load_audios(info)
         audios, audio_mix = self._make_mix(audios)
 

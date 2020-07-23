@@ -36,15 +36,16 @@ class NetWrapper(torch.nn.Module):
         audio_mix: batch, seq_len
         frames : batch, num_mix, [3, H, W]
         '''
-        frames.transpose_(0,1) # [2, 5, 3, 3, 224, 224]
         gt_audios.transpose_(0,1) # [2, 5, 65535]
-        N = len(frames)
+        N = len(gt_audios)
 
         # 1. forward net_frame -> Bx1xC
         feat_frames = [None for n in range(N)]
-        for n in range(N):
-            feat_frames[n] = self.net_frame.forward_multiframe(frames[n])
-            feat_frames[n] = activate(feat_frames[n], args.img_activation)
+        if frames is not None:
+            frames.transpose_(0,1) # [2, 5, 3, 3, 224, 224]
+            for n in range(N):
+                feat_frames[n] = self.net_frame.forward_multiframe(frames[n])
+                feat_frames[n] = activate(feat_frames[n], args.img_activation)
 
         # 2. forward net_sound with feat-frame 
         pred_audios = self.net_sound.forward(audio_mix, feat_frames)
@@ -94,7 +95,8 @@ def create_dataloader(args):
             audLen=args.audLen, 
             num_mix=args.num_mix, 
             max_sample=-1, 
-            dup_trainset=args.dup_trainset, 
+            dup_trainset=args.dup_trainset,
+            selected_instr=args.instr,
         split='train')
     loader_train = torch.utils.data.DataLoader(
             dataset_train,
@@ -102,7 +104,7 @@ def create_dataloader(args):
             shuffle=True,
             num_workers=int(args.workers),
             drop_last=True)
-
+    print(dataset_train)
     dataset_val = MUSICMixDataset(
         args.list_val,
         num_frames=args.num_frames, 
@@ -114,7 +116,9 @@ def create_dataloader(args):
         num_mix=args.num_mix, 
         max_sample=args.num_val, 
         dup_trainset=1, 
+        selected_instr=args.instr,
     split='eval')
+    print(dataset_val)
 
     loader_val = torch.utils.data.DataLoader(
         dataset_val,

@@ -1,37 +1,31 @@
 #!/bin/bash
 
 OPTS=""
-OPTS+="--id SOLO "
+OPTS+="--id SOLO-single-2 "
 OPTS+="--list_train data/solo/train.csv "
 OPTS+="--list_val data/solo/val.csv "
 
 # Models
-OPTS+="--arch_sound dprnn6 "
-OPTS+="--arch_synthesizer linear "
-OPTS+="--arch_frame resnet18dilated "
-OPTS+="--img_pool maxpool "
 OPTS+="--num_channels 64 "
 # binary mask, BCE loss, weighted loss
 # logscale in frequency
-OPTS+="--loss sisnr "
+
+OPTS+="--arch_sound dprnn2 "
+OPTS+="--loss upit "
 OPTS+="--num_mix 2 "
 
 # frames-related
-OPTS+="--num_frames 3 "
-OPTS+="--stride_frames 24 "
-OPTS+="--frameRate 8 "
 
 # audio-related
 OPTS+="--audLen 65535 "
 OPTS+="--audRate 11025 "
+OPTS+="--instr Cello Basson Clarinet DoubleBass Flute Horn Oboe Saxophone Trumpet Violin Tuba "
 
 # learning params
-OPTS+="--workers 48 "
-OPTS+="--dup_trainset 1 "
 
+# OPTS+="--lr_synthesizer 1e-3 "
 OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "
-OPTS+="--lr_synthesizer 1e-3 "
 OPTS+="--num_epoch 100 "
 OPTS+="--lr_steps 5 8 12 15 20 "
 

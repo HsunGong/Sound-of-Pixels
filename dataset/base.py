@@ -27,21 +27,22 @@ def base_dirname(path, n):
 
 class BaseDataset(torchdata.Dataset):
     @staticmethod
-    def _generate(df:pd.DataFrame):
+    def _generate(df:pd.DataFrame, selected_instr):
         # datas = pd.DataFrame({'path':self.list_sample})
         df['id'] = df.apply(lambda x: base_dirname(P.splitext(x['audio'])[0], 0), axis=1)
         df['type'] = df.apply(lambda x: base_dirname(P.splitext(x['audio'])[0], 1), axis=1)
         # df= df[df['type'].str.match('Cello|Bassoon')]
-        df= df[df['type'].str.match('Cello|Bassoon')]
-        # print(df)
+        df= df[df['type'].str.match('|'.join(selected_instr))]
+        print('Selected Instr are: ', selected_instr)
         return df
         # return df[df['type'].str.match('Cello|DoubleBass')]
         # return df
 
-    def __init__(self, list_sample, split,
+    def __init__(self, list_sample, split, selected_instr,
             num_frames, stride_frames, frameRate, imgSize, 
             audRate,audLen,
         ):
+        self.selected_instr= selected_instr
         self.split = split
 
         # params
@@ -58,7 +59,7 @@ class BaseDataset(torchdata.Dataset):
         self.audSec = 1. * self.audLen / self.audRate
 
         # generate data-configs
-        self.list_sample = self._generate(parse_csv(list_sample))
+        self.list_sample = self._generate(parse_csv(list_sample), self.selected_instr)
 
     def __repr__(self):
         return '# samples: {}'.format(self.__len__())

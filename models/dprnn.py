@@ -99,10 +99,6 @@ class Separator(nn.Module):
         self.DPRNN = DPRNN('LSTM', self.feature_dim, self.hidden_dim, self.feature_dim*self.num_spk, 
                             num_layers=layer, bidirectional=bidirectional)
         
-        # mask estimation layer
-        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.output_dim, 1),
-                                    nn.ReLU(inplace=True)
-                                   )
         
     def pad_segment(self, input, segment_size):
         # input is the features: (B, N, T)
@@ -165,10 +161,8 @@ class Separator(nn.Module):
         
         # overlap-and-add of the outputs
         output = self.merge_feature(output, enc_rest)
-        masks = self.output(output)  # B*C, K, T
-        masks = masks.view(batch_size, self.num_spk, self.output_dim, -1)  # B, C, K, T
-        
-        return masks
+
+        return output
     
 class DPRNN_TasNet(nn.Module):
     def __init__(self, enc_dim=64, feature_dim=64, hidden_dim=128, sr=16000, win=2,
@@ -192,7 +186,12 @@ class DPRNN_TasNet(nn.Module):
         # DPRNN separator
         self.separator = Separator(self.enc_dim, self.feature_dim, self.hidden_dim, 
                                     self.enc_dim, self.num_spk, layer, segment_size)
-        
+
+        # mask estimation layer
+        self.mask_estimation = nn.Sequential(nn.Conv1d(self.feature_dim, self.enc_dim, 1),
+                                    nn.ReLU(inplace=True)
+                                   )
+
         # output decoder
         self.decoder = nn.ConvTranspose1d(self.enc_dim, 1, self.win, bias=False, stride=self.stride)
 
@@ -240,11 +239,17 @@ class DPRNN_TasNet(nn.Module):
                 # enc_feature = self.synthesizer.forward_param(feat_frame, enc_feature.unsqueeze(1))
 
                 # separation(DPRNN + chunk) module
-                mask = self.separator(enc_feature)  # B, C, N, L
-                output = mask * enc_output.unsqueeze(1)  # B, C, N, L
-
+                output = self.separator(enc_feature)  # B, C, N, L
+                
                 # after dprnn
-                output = self.synthesizer.forward_param(feat_frame, output)
+                # enc_feature = self.synthesizer.forward_param(feat_frame, enc_feature.unsqueeze(1))
+                
+                mask = self.mask_estimation(output)  # B*C, K, T
+                mask = mask.view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, K, T
+                output = mask * enc_output.unsqueeze(1)  # B, C, N, L
+                
+                # after mask-conv
+                # output = self.synthesizer.forward_param(feat_frame, output)
                 
                 # waveform decoder
                 output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, T
@@ -258,8 +263,10 @@ class DPRNN_TasNet(nn.Module):
 
         else: # only sound
             # separation module
-            mask = self.separator(enc_feature)  # B, C, N(enc_dim), L
-            output = mask * enc_output.unsqueeze(1)  # B, C, N(enc_dim), L
+            output = self.separator(enc_feature)  # B, C, N, L
+            mask = self.mask_estimation(output)  # B*C, K, T
+            mask = mask.view(batch_size, self.num_spk, self.enc_dim, -1)  # B, C, K, T
+            output = mask * enc_output.unsqueeze(1)  # B, C, N, L
             
             # waveform decoder
             output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, T

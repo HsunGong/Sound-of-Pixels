@@ -24,9 +24,9 @@ class ArgParser(object):
                             help="weights to finetune net_synthesizer")
         parser.add_argument('--num_channels', default=32, type=int,
                             help='number of channels')
-        parser.add_argument('--num_frames', default=1, type=int,
+        parser.add_argument('--num_frames', default=3, type=int,
                             help='number of frames')
-        parser.add_argument('--stride_frames', default=1, type=int,
+        parser.add_argument('--stride_frames', default=24, type=int,
                             help='sampling stride of frames')
         parser.add_argument('--img_pool', default='maxpool',
                             help="avg or max pool image features")
@@ -94,8 +94,9 @@ class ArgParser(object):
                             default='data/train.csv')
         parser.add_argument('--list_val',
                             default='data/val.csv')
-        parser.add_argument('--dup_trainset', default=100, type=int,
+        parser.add_argument('--dup_trainset', default=1, type=int,
                             help='duplicate so that one epoch has more iters')
+        parser.add_argument('--instr', nargs='+', type=str, default=['Cello', 'Bassoon'])
 
         # optimization related arguments
         parser.add_argument('--num_epoch', default=100, type=int,
