@@ -39,13 +39,14 @@ class NetWrapper(torch.nn.Module):
         frames.transpose_(0,1) # [2, 5, 3, 3, 224, 224]
         gt_audios.transpose_(0,1) # [2, 5, 65535]
         N = len(frames)
-        # 2. forward net_frame -> Bx1xC
+
+        # 1. forward net_frame -> Bx1xC
         feat_frames = [None for n in range(N)]
         for n in range(N):
             feat_frames[n] = self.net_frame.forward_multiframe(frames[n])
             feat_frames[n] = activate(feat_frames[n], args.img_activation)
 
-        # 1. forward net_sound -> BxCxHxW
+        # 2. forward net_sound with feat-frame 
         pred_audios = self.net_sound.forward(audio_mix, feat_frames)
         pred_audios = activate(pred_audios, args.sound_activation)
         # print(pred_audios.shape, gt_audios.shape)

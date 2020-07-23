@@ -10,15 +10,17 @@ class InnerProd(nn.Module):
         self.bias = nn.Parameter(torch.zeros(1))
 
     def forward_param(self, feat_img, feat_sound):
-        # [5, 64, 4098]
-        # [5, 64]
+        '''
+        feat_sound: batch X num_spk(1) X channel X seq_len
+        feat_img: batch X 1 X channel
+        '''
         sound_size = feat_sound.shape
+        print(sound_size)
         B, C = feat_img.shape[0], feat_img.shape[1]
-        # 3 64 torch.Size([3, 64]) torch.Size([3, 1, 64, 4098])
+        
         feat_sound = feat_sound.view(B * C, -1)
         feat_img = (feat_img * self.scale).view(B * C, 1)
         
-
         z = (feat_img * feat_sound).view(*sound_size)
         z = z + self.bias
         return z

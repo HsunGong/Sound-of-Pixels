@@ -76,10 +76,10 @@ class DPRNN(nn.Module):
     
     
 # base module for DPRNN-based modules
-class DPRNN_base(nn.Module):
+class Separator(nn.Module):
     def __init__(self, input_dim, feature_dim, hidden_dim, output_dim, num_spk=2, 
                  layer=4, segment_size=100, bidirectional=True):
-        super(DPRNN_base, self).__init__()
+        super(Separator, self).__init__()
         
         self.input_dim = input_dim
         self.feature_dim = feature_dim
@@ -98,6 +98,11 @@ class DPRNN_base(nn.Module):
         # dual-path RNN
         self.DPRNN = DPRNN('LSTM', self.feature_dim, self.hidden_dim, self.feature_dim*self.num_spk, 
                             num_layers=layer, bidirectional=bidirectional)
+        
+        # mask estimation layer
+        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.output_dim, 1),
+                                    nn.ReLU(inplace=True)
+                                   )
         
     def pad_segment(self, input, segment_size):
         # input is the features: (B, N, T)
@@ -144,19 +149,7 @@ class DPRNN_base(nn.Module):
             output = output[:,:,:-rest]
         
         return output.contiguous()  # B, N, T
-    
-    def forward(self, input):
-        pass
 
-class Separator(DPRNN_base):
-    def __init__(self, *args, **kwargs):
-        super(Separator, self).__init__(*args, **kwargs)
-        
-        # mask estimation layer
-        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.output_dim, 1),
-                                    nn.ReLU(inplace=True)
-                                   )
-        
     def forward(self, input):
         
         batch_size = input.size(0)
@@ -202,6 +195,10 @@ class DPRNN_TasNet(nn.Module):
         
         # output decoder
         self.decoder = nn.ConvTranspose1d(self.enc_dim, 1, self.win, bias=False, stride=self.stride)
+
+        # synthesizer
+        from .synthesizer_net import InnerProd
+        self.synthesizer = InnerProd(fc_dim=self.enc_dim)
         
     def pad_input(self, input, window):
         """
@@ -222,27 +219,51 @@ class DPRNN_TasNet(nn.Module):
         
     def forward(self, input, feat_frames):
         '''
+        input : batch X len(T) (audio_mix)
+        feat_frames: spk X batch X 1 X channel
+
         output: batch X spk X len
         '''
-        
         # padding
-        output, rest = self.pad_input(input, self.win)
-        batch_size = output.size(0)
-        
+        input, rest = self.pad_input(input, self.win) # B X T(pad)
+        batch_size = input.size(0)
+
         # waveform encoder
-        enc_output = self.encoder(output.unsqueeze(1))  # B, N, T
+        enc_output = self.encoder(input.unsqueeze(1))  # B, N(enc_dim\channel), L
         seq_len = enc_output.shape[-1]
-        # normalize features
-        enc_feature = self.norm(enc_output)
-        
-        # separation module
-        mask = self.separator(enc_feature)  # B, C, N, T
-        output = mask * enc_output.unsqueeze(1)  # B, C, N, T
-        
-        # waveform decoder
-        output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, L
-        output = output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, L
-        output = output.view(batch_size, self.num_spk, -1)
-        output = output.transpose(0,1)
-        
-        return output
+        enc_feature = self.norm(enc_output) # normalize features
+   
+        if self.num_spk == 1: # require feat-frames
+            outputs = []
+            for feat_frame in feat_frames:
+                # after encoder
+                # enc_feature = self.synthesizer.forward_param(feat_frame, enc_feature.unsqueeze(1))
+
+                # separation(DPRNN + chunk) module
+                mask = self.separator(enc_feature)  # B, C, N, L
+                output = mask * enc_output.unsqueeze(1)  # B, C, N, L
+
+                # after dprnn
+                output = self.synthesizer.forward_param(feat_frame, output)
+                
+                # waveform decoder
+                output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, T
+                output = output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, T
+                output = output.view(batch_size, self.num_spk, -1)
+
+
+                output.squeeze_(1) # batch, L
+                outputs.append(output)
+            return outputs
+
+        else: # only sound
+            # separation module
+            mask = self.separator(enc_feature)  # B, C, N(enc_dim), L
+            output = mask * enc_output.unsqueeze(1)  # B, C, N(enc_dim), L
+            
+            # waveform decoder
+            output = self.decoder(output.view(batch_size*self.num_spk, self.enc_dim, seq_len))  # B*C, 1, T
+            output = output[:,:,self.stride:-(rest+self.stride)].contiguous()  # B*C, 1, T
+            output = output.view(batch_size, self.num_spk, -1)
+            output = output.transpose(0,1) # num_spk, batch_size
+            return output
