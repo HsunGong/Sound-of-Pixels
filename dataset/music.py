@@ -23,8 +23,8 @@ class MUSICMixDataset(BaseDataset):
         self.num_mix = num_mix
         self.differ_type = differ_type
 
-        self.update_mix(_dilation=dup_trainset,max_sample=max_sample)
         self.update_center()
+        self.update_mix(_dilation=dup_trainset,max_sample=max_sample)
 
     def __len__(self):
         return len(self.mix_idx)
@@ -36,11 +36,12 @@ class MUSICMixDataset(BaseDataset):
         self.mix_idx = np.zeros((len(self.list_sample) * _dilation, self.num_mix), dtype=np.int)
 
         # types = self.list_sample['type'].unique()
-        _d = self.list_sample
-        for idx, record in _d.iterrows():
+        type_set = set(self.list_sample['type'])
+        type_dict = {t: self.list_sample[self.list_sample['type'] != t] for t in type_set}
+        for idx, record in self.list_sample.iterrows():
             self.mix_idx[idx * _dilation: (idx+1) * _dilation,0] = idx # ori idx
 
-            _new_d = _d[_d['type'] != record['type']] if self.differ_type else _d
+            _new_d = type_dict[record['type']] if self.differ_type else self.list_sample
             for _next_idx in range(1, self.num_mix): # slow but good
                 newer = pd.DataFrame(columns=_new_d.columns)
                 while len(newer) < _dilation * (self.num_mix - 1):
@@ -56,16 +57,27 @@ class MUSICMixDataset(BaseDataset):
         np.random.shuffle(self.mix_idx)
 
     def update_center(self):
-        # all_frames = self.list_sample['size']
-        if self.split == 'train':
-            idx_margin = max(
-                int(self.fps * 8), (self.num_frames // 2) * self.stride_frames)
-            # random, not to sample start and end n-frames
-            self.list_sample['center_frame'] = self.list_sample['size'].apply(lambda x: 
-                random.randint(idx_margin+1, x - idx_margin)
-                )
-        else:
-            self.list_sample['center_frame'] = self.list_sample['size'].apply(lambda x: x // 2)
+        new_list = pd.DataFrame(columns=self.list_sample.columns.tolist() + ['center_frame'])
+        idx_margin = max(
+            int(self.fps * 8), (self.num_frames // 2) * self.stride_frames)
+        # print(idx_margin, (self.num_frames // 2) * self.stride_frames,   int(self.fps * 8),)
+        for _, row in self.list_sample.iterrows():
+            split = (row['size'] - idx_margin) // (self.num_frames * self.stride_frames) # 1-base
+            if self.split == 'train':
+                _new = pd.DataFrame({
+                    "audio": [row['audio'] for _ in range(split)],
+                    "frame":[row['frame'] for _ in range(split)],
+                    "size":[row['size'] for _ in range(split)],
+                    'type': [row['type'] for _ in range(split)],
+                    'id': [row['id'] + '-' + str(idx) for idx in range(split)], 
+                    'center_frame' : [1 + (self.num_frames // 2) * self.stride_frames * (idx + 1) for idx in range(split)] # 1-base
+                })
+                # print(_new)
+                new_list = new_list.append(_new, ignore_index=True)
+            else:
+                row['center_frame'] = row['size'] // 2
+                new_list = new_list.append(row)
+        self.list_sample = new_list
         
         # update audio-center
         self.list_sample['center_audio'] = self.list_sample['center_frame'].apply(lambda x: (x - 0.5) / self.fps )
@@ -120,7 +132,7 @@ class MUSICMixDataset(BaseDataset):
 
         # new scale to prevent from abs(audio) > 1
         # audio[audio > 1.] = 1., audio[audio < -1.] = -1.
-        scale = 0.99 / max(np.max(np.abs(audios)), np.max(np.abs(mix)))
+        scale = 0.99 / max(np.max(np.abs(audios) + 1e-8), np.max(np.abs(mix) + 1e-8))
         return (scale * audios), (scale * mix)
 
 

@@ -27,13 +27,13 @@ OPTS+="--audRate 11025 "
 
 # learning params
 OPTS+="--workers 48 "
-OPTS+="--dup_trainset 3 "
+OPTS+="--dup_trainset 1 "
 
 OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "
 OPTS+="--lr_synthesizer 1e-3 "
 OPTS+="--num_epoch 100 "
-OPTS+="--lr_steps 20 30 40 60 80 "
+OPTS+="--lr_steps 5 8 12 15 20"
 
 # display, viz
 OPTS+="--disp_iter 10 "
@@ -41,7 +41,7 @@ OPTS+="--num_vis 4 "
 OPTS+="--num_val 256 "
 
 OPTS+="--batch_size_per_gpu 5 "
-# OPTS+="--resume"
+OPTS+="--resume"
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 python -u main.py $OPTS "$@"

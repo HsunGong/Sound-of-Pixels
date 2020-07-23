@@ -72,11 +72,14 @@ def build_criterion(arch):
     return eval(arch.upper() + 'Loss')()
 
 def adjust_learning_rate(optimizer, args):
-    args.lr_sound *= 0.1
-    args.lr_frame *= 0.1
-    args.lr_synthesizer *= 0.1
+    # args.lr_sound *= 0.1
+    # args.lr_frame *= 0.1
+    # args.lr_synthesizer *= 0.1
     for param_group in optimizer.param_groups:
         param_group['lr'] *= 0.1
+
+def get_lr(optimizer):
+    return [param_group['lr'] for param_group in optimizer.param_groups]
 
 def create_dataloader(args):
     # Dataset and Loader
@@ -168,7 +171,7 @@ def main(args, checkpoint):
     for epoch in range(1, args.num_epoch + 1):
         train(netWrapper, loader_train, optimizer, history, epoch, args)
         loader_train.dataset.update_mix(_dilation=args.dup_trainset)
-        loader_train.dataset.update_center()
+        # loader_train.dataset.update_center()
 
         # Evaluation and visualization
         if epoch % args.eval_epoch == 0:
@@ -181,6 +184,7 @@ def main(args, checkpoint):
         # drop learning rate
         if epoch in args.lr_steps:
             adjust_learning_rate(optimizer, args)
+            print('LR:(sound, frame1, frame2)', get_lr(optimizer))
 
     print('Training Done!')
 
