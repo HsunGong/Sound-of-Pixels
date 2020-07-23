@@ -61,8 +61,8 @@ def create_optimizer(nets, args, checkpoint):
                     {'params': net_frame.features.parameters(), 'lr': args.lr_frame},
                     {'params': net_frame.fc.parameters(), 'lr': args.lr_sound}]
     # optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=1e-4)
-    # optimizer = torch.optim.Adam(param_groups, weight_decay=1e-4)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(param_groups, weight_decay=1e-4)
+    # optimizer = torch.optim.AdamW(param_groups, weight_decay=1e-4)
     if checkpoint is not None:
         optimizer.load_state_dict(checkpoint['optimizer'])
     return optimizer

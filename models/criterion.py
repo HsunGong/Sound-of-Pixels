@@ -58,51 +58,51 @@ class BCELoss(BaseLoss):
         return F.binary_cross_entropy(pred, target, weight=weight)
 
 
-from itertools import permutations
+def sisnr(x, s, eps=1e-8):
+    """
+    calculate training loss
+    input:
+        x: separated signal, N x S tensor
+        s: reference signal, N x S tensor
+    Return:
+        sisnr: N tensor
+    """
+
+    def l2norm(mat, keepdim=False):
+        return torch.norm(mat, dim=-1, keepdim=keepdim)
+
+    if x.shape != s.shape:
+        raise RuntimeError(
+            "Dimention mismatch when calculate si-snr, {} vs {}".format(
+                x.shape, s.shape))
+    x_zm = x - torch.mean(x, dim=-1, keepdim=True)
+    s_zm = s - torch.mean(s, dim=-1, keepdim=True)
+    t = torch.sum(
+        x_zm * s_zm, dim=-1,
+        keepdim=True) * s_zm / (l2norm(s_zm, keepdim=True)**2 + eps)
+    if torch.isnan(20 * torch.log10(eps + l2norm(t) / (l2norm(x_zm - t) + eps))).any():
+        print(eps, t, x, s, l2norm(t), l2norm(x_zm - t), (l2norm(x_zm - t)+eps))
+        raise ValueError
+    return 20 * torch.log10(eps + l2norm(t) / (l2norm(x_zm - t) + eps))
 
 class UPITLoss(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-    @staticmethod
-    def sisnr(x, s, eps=1e-8):
-        """
-        calculate training loss
-        input:
-            x: separated signal, N x S tensor
-            s: reference signal, N x S tensor
-        Return:
-            sisnr: N tensor
-        """
-
-        def l2norm(mat, keepdim=False):
-            return torch.norm(mat, dim=-1, keepdim=keepdim)
-
-        if x.shape != s.shape:
-            raise RuntimeError(
-                "Dimention mismatch when calculate si-snr, {} vs {}".format(
-                    x.shape, s.shape))
-        x_zm = x - torch.mean(x, dim=-1, keepdim=True)
-        s_zm = s - torch.mean(s, dim=-1, keepdim=True)
-        t = torch.sum(
-            x_zm * s_zm, dim=-1,
-            keepdim=True) * s_zm / (l2norm(s_zm, keepdim=True)**2 + eps)
-
-        return 20 * torch.log10(eps + l2norm(t) / (l2norm(x_zm - t) + eps))
-
-
     def forward(self, ests, refs):
-        # spks x batch x S
+        # spks x n x S
         num_spks = len(refs)
 
         def sisnr_loss(permute):
             # for one permute
             return sum(
-                [self.sisnr(ests[s], refs[t])
+                [sisnr(ests[s], refs[t])
                 for s, t in enumerate(permute)]) / len(permute)
                 # average the value
 
         # P x N
+        from itertools import permutations
+
         N = refs[0].size(0)
         sisnr_mat = torch.stack(
             [sisnr_loss(p) for p in permutations(range(num_spks))])
@@ -121,18 +121,4 @@ class SISNRLoss(BaseLoss):
         self.eps = 1e-8
 
     def _forward(self, pred, target, weight=None):
-        def l2norm(mat, keepdim=False):
-            return torch.norm(mat, dim=-1, keepdim=keepdim)
-
-        if pred.shape != target.shape:
-            raise RuntimeError(
-                "Dimention mismatch when calculate si-snr, {} vs {}".format(
-                    pred.shape, target.shape))
-
-        pred_zm = pred - torch.mean(pred, dim=-1, keepdim=True)
-        target_zm = target - torch.mean(target, dim=-1, keepdim=True)
-        t = torch.sum(
-            pred_zm * target_zm, dim=-1,
-            keepdim=True) * target_zm / (l2norm(target_zm, keepdim=True)**2 + self.eps)
-
-        return 20 * torch.log10(self.eps + l2norm(t) / (l2norm(pred_zm - t) + self.eps))
+        return sisnr(pred, target)

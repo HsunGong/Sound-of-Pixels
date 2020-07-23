@@ -41,7 +41,7 @@ OPTS+="--num_vis 4 "
 OPTS+="--num_val 256 "
 
 OPTS+="--batch_size_per_gpu 5 "
-OPTS+="--resume"
+# OPTS+="--resume"
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 python -u main.py $OPTS "$@"
