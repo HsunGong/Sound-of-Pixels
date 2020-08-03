@@ -46,6 +46,8 @@ def build_sound(arch='unet5', fc_dim=64, weights=''):
         net_sound = DPRNN_TasNet(num_spk=1) # for sound+vision, require sisnrLoss
     elif arch == 'dprnn2':
         net_sound = DPRNN_TasNet(num_spk=2) # for sound-only, require UPITLoss
+    elif arch == 'dprnn3':
+        net_sound = DPRNN_TasNet(num_spk=3) # for sound-only, require UPITLoss
     else: raise Exception('No such arch-sound')
 
     net_sound.apply(weights_init)

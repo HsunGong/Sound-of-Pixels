@@ -39,17 +39,17 @@ class MUSICMixDataset(BaseDataset):
         type_set = set(self.list_sample['type'])
         type_dict = {t: self.list_sample[self.list_sample['type'] != t] for t in type_set}
         for idx, record in self.list_sample.iterrows():
-            self.mix_idx[idx * _dilation: (idx+1) * _dilation,0] = idx # ori idx
+            self.mix_idx[idx * _dilation: (idx+1) * _dilation, 0] = idx # ori idx
 
             _new_d = type_dict[record['type']] if self.differ_type else self.list_sample
             for _next_idx in range(1, self.num_mix): # slow but good
                 newer = pd.DataFrame(columns=_new_d.columns)
                 while len(newer) < _dilation * (self.num_mix - 1):
                     # newer = newer.append(_new_d.sample((1+_dilation) * (self.num_mix - 1), axis=0, replace=False).drop_duplicates('type')) # random_state same as numpy.random.seed
-                    newer = newer.append(_new_d.sample(_dilation * (self.num_mix - 1), axis=0, replace=False)) # random_state same as numpy.random.seed
+                    newer = newer.append(_new_d.sample(_dilation * 1 + 1, axis=0, replace=False)) # random_state same as numpy.random.seed
                     # newer.append(_new_d.sample(_dilation * self.num_mix, axis=0)) # random_state same as numpy.random.seed
                     # newer.drop_duplicates('type', inplace=True)
-                newer = newer[:_dilation * (self.num_mix - 1)].index
+                newer = newer[:_dilation * 1].index.to_numpy()
                 self.mix_idx[idx * _dilation: (idx+1) * _dilation, _next_idx] = newer
 
         if max_sample > 0:
@@ -95,7 +95,7 @@ class MUSICMixDataset(BaseDataset):
         try:
             frames = self._load_frameses(info)
         except:
-            frames = torch.zeros([2, 3, 3, 224, 224])
+            frames = torch.zeros([len(index), 3, 3, 224, 224])
         audios = self._load_audios(info)
         audios, audio_mix = self._make_mix(audios)
 
@@ -131,12 +131,11 @@ class MUSICMixDataset(BaseDataset):
         else: 
             scale = 1 + (0.5 - np.random.random((len(audios), 1))) * 0
         audios *= scale
-        mix = np.sum(audios, axis = 0)
+        audios[audios > 1] = 1
+        audios[audios < -1] = -1
+        mix = np.average(audios, axis = 0)
 
-        # new scale to prevent from abs(audio) > 1
-        # audio[audio > 1.] = 1., audio[audio < -1.] = -1.
-        scale = 0.99 / max(np.max(np.abs(audios) + 1e-8), np.max(np.abs(mix) + 1e-8))
-        return (scale * audios), (scale * mix)
+        return audios, mix
 
 
 

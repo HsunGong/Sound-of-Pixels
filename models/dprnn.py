@@ -165,8 +165,8 @@ class Separator(nn.Module):
         return output
     
 class DPRNN_TasNet(nn.Module):
-    def __init__(self, enc_dim=64, feature_dim=64, hidden_dim=128, sr=16000, win=2,
-                 layer=6, num_spk=2, segment_size=100):
+    def __init__(self, enc_dim=256, feature_dim=128, hidden_dim=256, sr=11025, win=2,
+                 layer=6, num_spk=2, segment_size=120):
         super(DPRNN_TasNet, self).__init__()
         
         # hyper parameters

@@ -112,7 +112,7 @@ def create_dataloader(args):
         frameRate=args.frameRate, 
         imgSize=args.imgSize, 
         audRate=args.audRate, 
-        audLen=args.audLen, 
+        audLen=11025*12, 
         num_mix=args.num_mix, 
         max_sample=args.num_val, 
         dup_trainset=1, 
@@ -220,7 +220,7 @@ if __name__ == '__main__':
         #     args.id += '-weightedLoss'
         args.id += '-channels{}'.format(args.num_channels)
         args.id += '-epoch{}'.format(args.num_epoch)
-        args.id += '-step' + '_'.join([str(x) for x in args.lr_steps])
+        # args.id += '-step' + '_'.join([str(x) for x in args.lr_steps])
 
     print('Model ID: {}'.format(args.id))
 
@@ -231,6 +231,7 @@ if __name__ == '__main__':
         try:
             checkpoint = torch.load(os.path.join(args.ckpt, 'best.pth'), map_location='cpu')
             # checkpoint = os.path.join(args.ckpt, 'lastest.pth')
+            print('loading', args.ckpt)
         except:
             checkpoint = None
     elif args.mode == 'train':
