@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import scipy.io.wavfile as wavfile
-from scipy.misc import imsave
+from imageio import imwrite
 from mir_eval.separation import bss_eval_sources
 
 # Our libs
@@ -231,8 +231,8 @@ def output_visuals(vis_rows, batch_data, outputs, args):
         filename_mixwav = os.path.join(prefix, 'mix.wav')
         filename_mixmag = os.path.join(prefix, 'mix.jpg')
         filename_weight = os.path.join(prefix, 'weight.jpg')
-        imsave(os.path.join(args.vis, filename_mixmag), mix_amp[::-1, :, :])
-        imsave(os.path.join(args.vis, filename_weight), weight[::-1, :])
+        imwrite(os.path.join(args.vis, filename_mixmag), mix_amp[::-1, :, :])
+        imwrite(os.path.join(args.vis, filename_weight), weight[::-1, :])
         wavfile.write(os.path.join(args.vis, filename_mixwav), args.audRate, mix_wav)
         row_elements += [{'text': prefix}, {'image': filename_mixmag, 'audio': filename_mixwav}]
 
@@ -250,16 +250,16 @@ def output_visuals(vis_rows, batch_data, outputs, args):
             filename_predmask = os.path.join(prefix, 'predmask{}.jpg'.format(n+1))
             gt_mask = (np.clip(gt_masks_[n][j, 0], 0, 1) * 255).astype(np.uint8)
             pred_mask = (np.clip(pred_masks_[n][j, 0], 0, 1) * 255).astype(np.uint8)
-            imsave(os.path.join(args.vis, filename_gtmask), gt_mask[::-1, :])
-            imsave(os.path.join(args.vis, filename_predmask), pred_mask[::-1, :])
+            imwrite(os.path.join(args.vis, filename_gtmask), gt_mask[::-1, :])
+            imwrite(os.path.join(args.vis, filename_predmask), pred_mask[::-1, :])
 
             # ouput spectrogram (log of magnitude, show colormap)
             filename_gtmag = os.path.join(prefix, 'gtamp{}.jpg'.format(n+1))
             filename_predmag = os.path.join(prefix, 'predamp{}.jpg'.format(n+1))
             gt_mag = magnitude2heatmap(gt_mag)
             pred_mag = magnitude2heatmap(pred_mag)
-            imsave(os.path.join(args.vis, filename_gtmag), gt_mag[::-1, :, :])
-            imsave(os.path.join(args.vis, filename_predmag), pred_mag[::-1, :, :])
+            imwrite(os.path.join(args.vis, filename_gtmag), gt_mag[::-1, :, :])
+            imwrite(os.path.join(args.vis, filename_predmag), pred_mag[::-1, :, :])
 
             # output audio
             filename_gtwav = os.path.join(prefix, 'gt{}.wav'.format(n+1))

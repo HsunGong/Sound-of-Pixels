@@ -1,7 +1,7 @@
 #!/bin/bash
 
 OPTS=""
-OPTS+="--id MUSIC "
+OPTS+="--id SOLO "
 OPTS+="--list_train data/train.csv "
 OPTS+="--list_val data/val.csv "
 
@@ -29,8 +29,7 @@ OPTS+="--audLen 65535 "
 OPTS+="--audRate 11025 "
 
 # learning params
-OPTS+="--num_gpus 4 "
-OPTS+="--workers 48 "
+OPTS+="--workers 24 "
 OPTS+="--batch_size_per_gpu 20 "
 OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "
@@ -39,8 +38,9 @@ OPTS+="--num_epoch 100 "
 OPTS+="--lr_steps 40 80 "
 
 # display, viz
-OPTS+="--disp_iter 20 "
-OPTS+="--num_vis 40 "
+OPTS+="--disp_iter 100 "
+OPTS+="--num_vis 3 "
 OPTS+="--num_val 256 "
 
-python -u main.py $OPTS
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+python -u main.py $OPTS "$@"

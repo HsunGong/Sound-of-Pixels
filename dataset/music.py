@@ -49,7 +49,7 @@ class MUSICMixDataset(BaseDataset):
                 path_frames[n].append(
                     os.path.join(
                         path_frameN,
-                        '{:06d}.jpg'.format(center_frameN + idx_offset)))
+                        '{}.jpg'.format(center_frameN + idx_offset)))
             path_audios[n] = path_audioN
 
         # load frames and audios, STFT

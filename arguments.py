@@ -47,8 +47,6 @@ class ArgParser(object):
                             help="log frequency scale")
 
         # Data related arguments
-        parser.add_argument('--num_gpus', default=1, type=int,
-                            help='number of gpus to use')
         parser.add_argument('--batch_size_per_gpu', default=32, type=int,
                             help='input batch size')
         parser.add_argument('--workers', default=32, type=int,
@@ -121,4 +119,6 @@ class ArgParser(object):
         self.add_train_arguments()
         args = self.parser.parse_args()
         self.print_arguments(args)
+        import torch
+        args.num_gpus = torch.cuda.device_count()
         return args
