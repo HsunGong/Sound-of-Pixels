@@ -35,12 +35,13 @@ OPTS+="--lr_frame 1e-4 "
 OPTS+="--lr_sound 1e-3 "
 OPTS+="--lr_synthesizer 1e-3 "
 OPTS+="--num_epoch 100 "
+OPTS+="--dup_trainset 10 "
 OPTS+="--lr_steps 40 80 "
 
 # display, viz
-OPTS+="--disp_iter 100 "
+OPTS+="--disp_iter 50 "
 OPTS+="--num_vis 3 "
-OPTS+="--num_val 256 "
+OPTS+="--num_val 100 "
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 python -u main.py $OPTS "$@"
