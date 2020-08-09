@@ -15,12 +15,12 @@ class ArgParser(object):
                             help="architecture of net_frame")
         parser.add_argument('--arch_synthesizer', default='linear',
                             help="architecture of net_synthesizer")
-        parser.add_argument('--weights_sound', default='',
-                            help="weights to finetune net_sound")
-        parser.add_argument('--weights_frame', default='',
-                            help="weights to finetune net_frame")
-        parser.add_argument('--weights_synthesizer', default='',
-                            help="weights to finetune net_synthesizer")
+        # parser.add_argument('--weights_sound', default='',
+        #                     help="weights to finetune net_sound")
+        # parser.add_argument('--weights_frame', default='',
+        #                     help="weights to finetune net_frame")
+        # parser.add_argument('--weights_synthesizer', default='',
+        #                     help="weights to finetune net_synthesizer")
         parser.add_argument('--num_channels', default=32, type=int,
                             help='number of channels')
         parser.add_argument('--num_frames', default=1, type=int,
@@ -76,7 +76,7 @@ class ArgParser(object):
         parser.add_argument('--ckpt', default='./ckpt',
                             help='folder to output checkpoints')
         parser.add_argument('--disp_iter', type=int, default=20,
-                            help='frequency to display')
+                            help='disp in one epoch')
         parser.add_argument('--eval_epoch', type=int, default=1,
                             help='frequency to evaluate')
 
@@ -84,7 +84,12 @@ class ArgParser(object):
 
     def add_train_arguments(self):
         parser = self.parser
-
+        parser.add_argument('--resume', action='store_true')
+        parser.add_argument('--resume_optim', action='store_true')
+        parser.add_argument('--clip_norm', default=5, type=float, help='LR')
+        parser.add_argument('--instr', nargs='+', type=str, 
+            default=['Cello', 'DoubleBass', 'Horn', 'Saxophone', 'Trumpet', 'Viola', 'Bassoon', 'Clarinet', 'Flute', 'Oboe', 'Trombone', 'Tuba', 'Violin'])
+        
         parser.add_argument('--mode', default='train',
                             help="train/eval")
         parser.add_argument('--list_train',
@@ -121,4 +126,6 @@ class ArgParser(object):
         self.print_arguments(args)
         import torch
         args.num_gpus = torch.cuda.device_count()
+
+        args.binary_mask = False
         return args

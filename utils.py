@@ -8,6 +8,43 @@ import cv2
 import subprocess as sp
 from threading import Timer
 
+def save_checkpoint(nets, history, optimizer, epoch, args):
+    import torch
+    (net_sound, net_frame) = nets
+
+    def _save_suffix(suffix):
+        torch.save({
+            'history':history,
+            'sound' : net_sound.state_dict(),
+            'frame' : net_frame.state_dict(),
+            'optimizer' : optimizer.state_dict(),
+            'epoch' : epoch
+        },f'{args.ckpt}/{suffix}.pth')
+
+    suffix_latest = 'latest'
+    suffix_best = 'best'
+    _save_suffix(suffix_latest)
+    if len(history['val']['err']) == 0:
+        print('eval by train-err')
+        cur_err = history['train']['err'][-1]
+    else: cur_err = history['val']['err'][-1]
+
+    print('Saving checkpoints at {} epochs.'.format(epoch), end='')
+    if cur_err < args.best_err:
+        print('--> Update best model')
+        args.best_err = cur_err
+        _save_suffix(suffix_best)
+    else: print('')
+
+def set_seed(seed):
+    import random
+    import numpy
+    import torch
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 def warpgrid(bs, HO, WO, warp=True):
     # meshgrid

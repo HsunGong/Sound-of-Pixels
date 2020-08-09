@@ -58,11 +58,13 @@ class ResnetFC(nn.Module):
 
         if not pool:
             return x
+        print(x.shape)
 
         if self.pool_type == 'avgpool':
             x = F.adaptive_avg_pool3d(x, 1)
         elif self.pool_type == 'maxpool':
             x = F.adaptive_max_pool3d(x, 1)
+        print(x.shape)
 
         x = x.view(B, C)
         return x

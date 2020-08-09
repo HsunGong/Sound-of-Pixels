@@ -2,12 +2,6 @@ import torch
 import torchvision
 import torch.nn.functional as F
 
-from .synthesizer_net import InnerProd, Bias
-from .audio_net import Unet
-from .vision_net import ResnetFC, ResnetDilated
-from .criterion import BCELoss, L1Loss, L2Loss
-
-
 def activate(x, activation):
     if activation == 'sigmoid':
         return torch.sigmoid(x)
@@ -21,6 +15,13 @@ def activate(x, activation):
         return x
     else:
         raise Exception('Unkown activation!')
+
+
+from .synthesizer_net import InnerProd, Bias
+from .audio_net import Unet
+from .vision_net import ResnetFC, ResnetDilated
+from .criterion import BCELoss, L1Loss, L2Loss, UPITLoss, SISNRLoss
+from .dprnn import DPRNN_TasNet
 
 
 class ModelBuilder():
@@ -43,6 +44,12 @@ class ModelBuilder():
             net_sound = Unet(fc_dim=fc_dim, num_downs=6)
         elif arch == 'unet7':
             net_sound = Unet(fc_dim=fc_dim, num_downs=7)
+        elif arch == 'dprnn6':
+            net_sound = DPRNN_TasNet(layer=6, enc_dim=fc_dim, num_spk=1)
+        elif arch == 'dprnn7':
+            net_sound = DPRNN_TasNet(layer=7, enc_dim=fc_dim, num_spk=1)
+        elif arch == 'dprnn2':
+            net_sound = DPRNN_TasNet(layer=6, enc_dim=fc_dim, num_spk=2)
         else:
             raise Exception('Architecture undefined!')
 
@@ -73,27 +80,21 @@ class ModelBuilder():
             net.load_state_dict(torch.load(weights))
         return net
 
-    def build_synthesizer(self, arch, fc_dim=64, weights=''):
-        if arch == 'linear':
-            net = InnerProd(fc_dim=fc_dim)
-        elif arch == 'bias':
-            net = Bias()
-        else:
-            raise Exception('Architecture undefined!')
+    # def build_synthesizer(self, arch, fc_dim=64, weights=''):
+    #     if arch == 'linear':
+    #         net = InnerProd(fc_dim=fc_dim)
+    #     elif arch == 'bias':
+    #         net = Bias()
+    #     else:
+    #         raise Exception('Architecture undefined!')
 
-        net.apply(self.weights_init)
-        if len(weights) > 0:
-            print('Loading weights for net_synthesizer')
-            net.load_state_dict(torch.load(weights))
-        return net
+    #     net.apply(self.weights_init)
+    #     if len(weights) > 0:
+    #         print('Loading weights for net_synthesizer')
+    #         net.load_state_dict(torch.load(weights))
+    #     return net
 
     def build_criterion(self, arch):
-        if arch == 'bce':
-            net = BCELoss()
-        elif arch == 'l1':
-            net = L1Loss()
-        elif arch == 'l2':
-            net = L2Loss()
-        else:
-            raise Exception('Architecture undefined!')
+        arch = arch.upper() + 'Loss'
+        net = eval(arch)()
         return net

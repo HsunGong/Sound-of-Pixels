@@ -38,13 +38,20 @@ class BaseDataset(torchdata.Dataset):
         self._init_vtransform()
 
         # list_sample can be a python list or a csv file of list
+        # parser.add_argument('--instr', nargs='+', type=str, default=['Cello', 'Bassoon'])
+        self.instr = opt.instr
+
         if isinstance(list_sample, str):
             # self.list_sample = [x.rstrip() for x in open(list_sample, 'r')]
             self.list_sample = []
             for row in csv.reader(open(list_sample, 'r'), delimiter=','):
                 if len(row) < 2:
+                    print('warn', row)
                     continue
-                self.list_sample.append(row)
+                import os.path as P
+                if P.basename(P.dirname(row[0])) in self.instr: # specific instr
+                    self.list_sample.append(row)
+
         elif isinstance(list_sample, list):
             self.list_sample = list_sample
         else:
@@ -52,7 +59,9 @@ class BaseDataset(torchdata.Dataset):
 
         if self.split == 'train':
             self.list_sample *= opt.dup_trainset
-            random.shuffle(self.list_sample)
+        elif self.split != 'train' and max_sample > len(self.list_sample):
+            self.list_sample *= (max_sample // len(self.list_sample)) + 1
+        random.shuffle(self.list_sample)
 
         if max_sample > 0:
             self.list_sample = self.list_sample[0:max_sample]
@@ -113,12 +122,30 @@ class BaseDataset(torchdata.Dataset):
         img = Image.open(path).convert('RGB')
         return img
 
-    def _stft(self, audio):
-        spec = librosa.stft(
+    def _stft(self, audio): # audio [len] or [batch, len]
+        '''
+
+        Return: amp,pha: [1,512,173]
+        '''
+        if type(audio) == np.ndarray:
+            audio = torch.from_numpy(audio)
+        spec = torch.stft(
             audio, n_fft=self.stft_frame, hop_length=self.stft_hop)
-        amp = np.abs(spec)
-        phase = np.angle(spec)
-        return torch.from_numpy(amp), torch.from_numpy(phase)
+        if audio.ndim == 1:
+            spec.unsqueeze_(0) # 1, XX
+
+        rea = spec[:, :, :, 0]
+        img = spec[:, :, :, 1]
+
+        amp = torch.abs(torch.sqrt(torch.pow(rea, 2) + torch.pow(img, 2)))
+        phase = torch.atan2(img, rea)
+        if audio.ndim == 2:
+            amp.unsqueeze_(1)
+            phase.unsqueeze_(1) # batch, 1, XX
+
+        return amp, phase
+        # return amp.squeeze(0), phase.squeeze(0)
+        # return torch.from_numpy(amp), torch.from_numpy(phase)
 
     def _load_audio_file(self, path):
         if path.endswith('.mp3'):
@@ -155,7 +182,7 @@ class BaseDataset(torchdata.Dataset):
 
         # resample
         if rate > self.audRate:
-            # print('resmaple {}->{}'.format(rate, self.audRate))
+            print('resmaple {}->{}'.format(rate, self.audRate))
             if nearest_resample:
                 audio_raw = audio_raw[::rate//self.audRate]
             else:
@@ -179,27 +206,85 @@ class BaseDataset(torchdata.Dataset):
 
         return audio
 
-    def _mix_n_and_stft(self, audios):
+    def _mix_n_and_stft(self, audios, no_mix=False): # audio [num_mix, batch, len] or [num_mix, len]
         N = len(audios)
         mags = [None for n in range(N)]
+
+        # sep + STFT
+        if not no_mix:
+            for n in range(N):
+                # if type(audios[n]) == torch.Tensor:
+                #     audios[n] = audios[n].detach().cpu().numpy()
+                audios[n] /= N
+
+        for n in range(N):
+            ampN, _ = self._stft(audios[n])
+            mags[n] = ampN
+        if no_mix:
+            return mags
+
+        # Mix + STFT
+        audio_mix = np.asarray(audios).sum(axis=0)
+        amp_mix, phase_mix = self._stft(audio_mix)
+
+        # to tensor
+        audio_mix = torch.from_numpy(audio_mix)
+        for n in range(N):
+            audios[n] = torch.from_numpy(audios[n])
+
+        return amp_mix, mags, phase_mix, audio_mix
+
+    def _mix_raw(self, audios): # and transfer to tensor
+        N = len(audios)
 
         # mix
         for n in range(N):
             audios[n] /= N
         audio_mix = np.asarray(audios).sum(axis=0)
 
-        # STFT
-        amp_mix, phase_mix = self._stft(audio_mix)
-        for n in range(N):
-            ampN, _ = self._stft(audios[n])
-            mags[n] = ampN.unsqueeze(0)
-
         # to tensor
-        # audio_mix = torch.from_numpy(audio_mix)
+        audio_mix = torch.from_numpy(audio_mix)
         for n in range(N):
             audios[n] = torch.from_numpy(audios[n])
 
-        return amp_mix.unsqueeze(0), mags, phase_mix.unsqueeze(0)
+        return audio_mix
+
+    def _dump_stft(self, audios, batch_data, args, preprocess=False): # pre-compute at the first time
+
+        # pred_masks_ = outputs['pred_masks']
+        # gt_masks_ = outputs['gt_masks']
+        # mag_mix_ = outputs['mag_mix']
+        # weight_ = outputs['weight']
+        mag_mix = batch_data['mag_mix'].to(args.device)
+        mags = [i.to(args.device) for i in batch_data['mags']]
+        pred_mags = self._mix_n_and_stft(audios, no_mix=True)
+
+        N = len(audios)
+        # print('0', mags[0].shape, len(pred_mags), pred_mags[0].shape, mag_mix.shape)
+
+        # 0.0 warp the spectrogram
+        from . import process_mag
+        if not preprocess:
+            mag_mix = mag_mix + 1e-10
+            if args.log_freq: mags, mag_mix = process_mag(mags, mag_mix, args.device)
+        if args.log_freq: pred_mags, _ = process_mag(pred_mags, None, args.device)
+        # print('1', mags[0].shape, pred_mags[0].shape, mag_mix.shape)
+
+        # 0.2 ground truth masks are computed after warpping!
+        from . import compute_mask
+        gt_masks = compute_mask(mags, mag_mix, args.binary_mask)
+        pred_masks = compute_mask(pred_mags, mag_mix, args.binary_mask)
+
+        if 'weight' not in batch_data:
+            from . import compute_weight
+            batch_data['weight'] = compute_weight(mag_mix, args.weighted_loss)
+
+        return {
+            'mag_mix' : mag_mix,
+            'pred_masks' : pred_masks,
+            'gt_masks' : gt_masks,
+            'weight' : batch_data['weight'],
+        }
 
     def dummy_mix_data(self, N):
         frames = [None for n in range(N)]
@@ -215,4 +300,4 @@ class BaseDataset(torchdata.Dataset):
             audios[n] = torch.zeros(self.audLen)
             mags[n] = torch.zeros(1, self.HS, self.WS)
 
-        return amp_mix, mags, frames, audios, phase_mix
+        return amp_mix, mags, frames, audios, phase_mix, torch.zeros(self.audLen)
