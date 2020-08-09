@@ -175,7 +175,10 @@ class DPRNN_TasNet(nn.Module):
     # def __init__(self, enc_dim=256, feature_dim=128, hidden_dim=256, sr=44100, win=2,
     #              layer=6, num_spk=2, segment_size=120):
     #     super(DPRNN_TasNet, self).__init__()
-    def __init__(self, enc_dim=256, feature_dim=128, hidden_dim=256, sr=11025, win=10,
+    # def __init__(self, enc_dim=64, feature_dim=64, hidden_dim=128, sr=16000, win=2,
+    #          layer=6, num_spk=2, segment_size=100):
+    # super(DPRNN_TasNet, self).__init__()
+    def __init__(self, enc_dim=256, feature_dim=256, hidden_dim=512, sr=11025, win=10,
                  layer=6, num_spk=2, segment_size=120):
         super(DPRNN_TasNet, self).__init__()
         

@@ -46,6 +46,7 @@ class NetWrapper(torch.nn.Module):
 
         # 4. loss
         err = self.crit(pred_audios, audios).reshape(1)
+        # print("\"", self.crit([audio_mix, audio_mix], audios).item(), self.crit(audios, audios).item(), err.item(),"\"")
 
         return err, pred_audios # or masks
 
@@ -55,8 +56,8 @@ def create_optimizer(nets, args, checkpoint):
     param_groups = [{'params': net_sound.parameters(), 'lr': args.lr_sound},
                     {'params': net_frame.features.parameters(), 'lr': args.lr_frame},
                     {'params': net_frame.fc.parameters(), 'lr': args.lr_sound}]
-    optimizer = torch.optim.SGD(param_groups, momentum=args.beta1, weight_decay=args.weight_decay)
-    # optimizer = torch.optim.Adam(param_groups, weight_decay=args.weight_decay)
+    # optimizer = torch.optim.SGD(param_groups, momentum=args.beta1, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(param_groups, weight_decay=args.weight_decay)
     if checkpoint is not None and args.resume_optim:
         optimizer.load_state_dict(checkpoint['optimizer'])
 

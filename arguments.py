@@ -111,7 +111,7 @@ class ArgParser(object):
                             help='steps to drop LR in epochs')
         parser.add_argument('--beta1', default=0.9, type=float,
                             help='momentum for sgd, beta1 for adam')
-        parser.add_argument('--weight_decay', default=1e-4, type=float,
+        parser.add_argument('--weight_decay', default=1e-6, type=float,
                             help='weights regularizer')
         self.parser = parser
 
